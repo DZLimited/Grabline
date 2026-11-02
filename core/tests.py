@@ -1,9 +1,17 @@
 import json
+import os
+import shutil
+import tempfile
+import time
+from pathlib import Path
 from unittest import mock
 
-from django.test import Client, TestCase
+from django.test import Client, TestCase, override_settings
 
-from .extractor import ExtractionError, detect_platform
+from .extractor import (
+    STALE_TEMP_SECONDS, TEMP_PREFIX, ExtractionError, _remove_stale_tempdirs, detect_platform, download,
+)
+from .views import _TempFileStream
 
 
 class DetectPlatformTests(TestCase):
@@ -99,5 +107,43 @@ class DownloadErrorTests(TestCase):
     def test_download_error_is_plain_text(self, _):
         r = Client().get("/api/download", {"url": "https://youtu.be/x"})
         self.assertEqual(r.status_code, 422)
-        self.assertEqual(r.content.decode(), "This video is unavailable.")
+        self.assertEqual(r.content.decode(), "grabline-error: This video is unavailable.")
         self.assertTrue(r["Content-Type"].startswith("text/plain"))
+
+    def test_download_error_can_load_in_the_hidden_frame(self):
+        r = Client().get("/api/download", {"url": "https://vimeo.com/1"})
+        self.assertEqual(r["X-Frame-Options"], "SAMEORIGIN")
+
+
+class DownloadLimitTests(TestCase):
+    @override_settings(GRABLINE_MAX_DURATION=60)
+    def test_long_video_is_refused_before_downloading(self):
+        ydl = mock.MagicMock()
+        ydl.extract_info.return_value = {"duration": 61}
+        with mock.patch("core.extractor.yt_dlp.YoutubeDL") as cls:
+            cls.return_value.__enter__.return_value = ydl
+            with self.assertRaisesMessage(ExtractionError, "too long"):
+                download("https://youtu.be/x")
+        ydl.process_ie_result.assert_not_called()
+
+
+class TempFileTests(TestCase):
+    def make_dir(self, prefix=TEMP_PREFIX):
+        path = Path(tempfile.mkdtemp(prefix=prefix))
+        self.addCleanup(shutil.rmtree, path, True)
+        return path
+
+    def test_close_removes_files_when_streaming_never_started(self):
+        folder = self.make_dir()
+        video = folder / "v.mp4"
+        video.write_bytes(b"data")
+        _TempFileStream(video).close()
+        self.assertFalse(folder.exists())
+
+    def test_stale_dirs_are_removed_and_recent_ones_kept(self):
+        stale, recent = self.make_dir(), self.make_dir()
+        old = time.time() - STALE_TEMP_SECONDS - 60
+        os.utime(stale, (old, old))
+        _remove_stale_tempdirs()
+        self.assertFalse(stale.exists())
+        self.assertTrue(recent.exists())

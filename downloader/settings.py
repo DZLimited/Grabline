@@ -13,6 +13,8 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -20,34 +22,51 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-bs_f&+@5$r_1v_!!(qvc_=xzeya&r$x5lkg9$=9d%)c7sh*2rz'
+# Debug is off unless asked for. manage.py turns it on for local development;
+# the WSGI entrypoint Vercel uses never does.
+DEBUG = os.environ.get('DJANGO_DEBUG') == '1'
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# Set by Grabline.exe, which only ever serves plain HTTP on the user's own PC.
+LOCAL_APP = os.environ.get('GRABLINE_LOCAL') == '1'
 
-ALLOWED_HOSTS = ['*']
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', '')
+if not SECRET_KEY:
+    if not DEBUG:
+        raise ImproperlyConfigured('Set the DJANGO_SECRET_KEY environment variable.')
+    SECRET_KEY = 'django-insecure-local-development-only'
+
+# Vercel sets these to the hostnames this deployment answers on.
+_vercel_hosts = [
+    os.environ[name]
+    for name in ('VERCEL_URL', 'VERCEL_BRANCH_URL', 'VERCEL_PROJECT_PRODUCTION_URL')
+    if os.environ.get(name)
+]
+# Comma-separated, for a custom domain.
+_extra_hosts = [h.strip() for h in os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',') if h.strip()]
+
+ALLOWED_HOSTS = _vercel_hosts + _extra_hosts + (['127.0.0.1', 'localhost'] if LOCAL_APP else [])
+CSRF_TRUSTED_ORIGINS = [f'https://{host}' for host in ALLOWED_HOSTS]
+
+if not DEBUG and not LOCAL_APP:
+    # Vercel terminates HTTPS and tells us the original scheme in this header.
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = True
+    SECURE_HSTS_SECONDS = 3600
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
 
 # Application definition
 
 INSTALLED_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
     'django.contrib.staticfiles',
     'core',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
-    'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
@@ -61,8 +80,6 @@ TEMPLATES = [
         'OPTIONS': {
             'context_processors': [
                 'django.template.context_processors.request',
-                'django.contrib.auth.context_processors.auth',
-                'django.contrib.messages.context_processors.messages',
             ],
         },
     },
@@ -117,6 +134,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 
 # Email
@@ -134,4 +152,7 @@ MAILERS = {
 # Instagram posts that need a login.
 GRABLINE_COOKIES = os.environ.get('GRABLINE_COOKIES') or str(BASE_DIR / 'cookies.txt')
 # Refuse videos longer than this (seconds) so one request can't tie up the server.
-GRABLINE_MAX_DURATION = int(os.environ.get('GRABLINE_MAX_DURATION', 60 * 60))
+# Vercel stops a function after 300s, so longer videos can't finish there anyway.
+GRABLINE_MAX_DURATION = int(os.environ.get(
+    'GRABLINE_MAX_DURATION', 5 * 60 if os.environ.get('VERCEL') else 60 * 60,
+))

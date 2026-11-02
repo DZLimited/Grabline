@@ -249,6 +249,8 @@ function qLabel(h){
   return h >= 2160 ? '4K' : h >= 1440 ? '1440p' : h + 'p';
 }
 const GENERIC_ERROR = "Something went wrong. Please check the link and try again.";
+const HOST_ERROR = "This video took too long or is too large for our server. Try a lower quality or a shorter video.";
+const ERROR_PREFIX = "grabline-error: ";
 let dlFrame = null, dlPoll = null, dlTimeout = null;
 
 function resetButtons(){
@@ -285,14 +287,16 @@ function startDownload(btn, q){
     // Attachments usually don't fire "load", so this normally means the
     // server sent an error. Some browsers fire it on success too, so give
     // the success cookie a moment before treating it as a failure.
-    let msg = '';
-    try { msg = (dlFrame.contentDocument.body.innerText || '').trim(); } catch (_) {}
-    if(msg.length > 300 || msg.startsWith('<')) msg = '';
+    let text = '';
+    try { text = (dlFrame.contentDocument.body.innerText || '').trim(); } catch (_) {}
+    // Anything without our prefix is the host's own error page (timeout, file
+    // too large), and its wording isn't meant for users.
+    const msg = text.startsWith(ERROR_PREFIX) ? text.slice(ERROR_PREFIX.length) : '';
     setTimeout(() => {
       if(document.cookie.includes('grabline_dl=' + token)) return;
       finishDownload();
       hintEl.textContent = '';
-      showError(msg);
+      showError(msg || HOST_ERROR);
     }, msg ? 0 : 1500);
   });
   dlFrame.src = '/api/download?' + params.toString();

@@ -6,6 +6,7 @@ import shutil
 from django.http import HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import render
 from django.utils.http import content_disposition_header
+from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_POST
 
@@ -16,6 +17,7 @@ logger = logging.getLogger(__name__)
 URL_RE = re.compile(r"^https?://", re.IGNORECASE)
 TOKEN_RE = re.compile(r"^[A-Za-z0-9]{6,40}$")
 CHUNK = 64 * 1024
+ERROR_PREFIX = "grabline-error: "
 
 
 def _valid_url(url: str) -> str | None:
@@ -50,11 +52,28 @@ def resolve_link(request):
 
 def _download_error(message: str, status: int = 400) -> HttpResponse:
     # Rendered inside the page's hidden download frame; the page reads this
-    # text and shows it in the status line.
-    return HttpResponse(message, status=status, content_type="text/plain; charset=utf-8")
+    # text and shows it in the status line. The prefix tells our messages apart
+    # from error pages the hosting platform may put in the frame instead.
+    return HttpResponse(ERROR_PREFIX + message, status=status, content_type="text/plain; charset=utf-8")
+
+
+class _TempFileStream:
+    """Streams a file, then removes its temp dir even if streaming never starts."""
+
+    def __init__(self, path):
+        self.path = path
+
+    def __iter__(self):
+        with open(self.path, "rb") as f:
+            while chunk := f.read(CHUNK):
+                yield chunk
+
+    def close(self):
+        shutil.rmtree(self.path.parent, ignore_errors=True)
 
 
 @require_GET
+@xframe_options_sameorigin  # errors are read from the page's hidden frame
 def download_proxy(request):
     """
     Downloads the post server-side with yt-dlp (merging video+audio when the
@@ -82,15 +101,7 @@ def download_proxy(request):
         logger.exception("download failed for %s", url)
         return _download_error("Something went wrong on our side. Please try again in a moment.", 500)
 
-    def stream():
-        try:
-            with open(path, "rb") as f:
-                while chunk := f.read(CHUNK):
-                    yield chunk
-        finally:
-            shutil.rmtree(path.parent, ignore_errors=True)
-
-    response = StreamingHttpResponse(stream(), content_type="video/mp4" if path.suffix == ".mp4" else "application/octet-stream")
+    response = StreamingHttpResponse(_TempFileStream(path), content_type="video/mp4" if path.suffix == ".mp4" else "application/octet-stream")
     response["Content-Disposition"] = content_disposition_header(True, filename)
     response["Content-Length"] = str(path.stat().st_size)
     if TOKEN_RE.match(token):

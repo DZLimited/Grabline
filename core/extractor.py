@@ -14,7 +14,9 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -43,6 +45,11 @@ NO_WATERMARK = "[format_note!*=watermarked]"
 logger = logging.getLogger(__name__)
 
 
+TEMP_PREFIX = "grabline-"
+# Well past the longest a request can run, so live downloads are never removed.
+STALE_TEMP_SECONDS = 60 * 60
+
+
 class ExtractionError(Exception):
     pass
 
@@ -55,6 +62,14 @@ def detect_platform(url: str) -> str:
     raise ExtractionError("That link isn't supported. Paste a TikTok, Instagram, YouTube or Facebook video link.")
 
 
+def _js_runtimes() -> dict:
+    # Grabline.exe ships its own node.exe, since most users won't have Node.
+    bundle_dir = getattr(sys, "_MEIPASS", None)
+    if bundle_dir:
+        return {"node": {"path": os.path.join(bundle_dir, "node.exe")}}
+    return {"deno": {}, "node": {}}
+
+
 def _base_opts() -> dict:
     opts = {
         "quiet": True,
@@ -65,7 +80,9 @@ def _base_opts() -> dict:
         # curl_cffi) gets past that.
         "impersonate": ImpersonateTarget.from_str("chrome"),
         # YouTube needs a JS runtime to solve its player challenges.
-        "js_runtimes": {"deno": {}, "node": {}},
+        "js_runtimes": _js_runtimes(),
+        # The default cache lives in the home dir, which is read-only on Vercel.
+        "cachedir": os.path.join(tempfile.gettempdir(), "ytdlp-cache"),
     }
     if FFMPEG:
         opts["ffmpeg_location"] = FFMPEG
@@ -158,14 +175,18 @@ def _extract(url: str, opts: dict, platform: str) -> dict:
     return info
 
 
+def _check_duration(info: dict) -> None:
+    max_dur = getattr(settings, "GRABLINE_MAX_DURATION", None)
+    if max_dur and (info.get("duration") or 0) > max_dur:
+        raise ExtractionError(f"This video is too long. We can download videos up to {max_dur // 60} minutes.")
+
+
 def resolve(url: str) -> dict:
     """Metadata + available quality options for the preview card."""
     platform = detect_platform(url)
     info = _extract(url, {**_base_opts(), **_format_opts(None), "skip_download": True}, platform)
 
-    max_dur = getattr(settings, "GRABLINE_MAX_DURATION", None)
-    if max_dur and (info.get("duration") or 0) > max_dur:
-        raise ExtractionError(f"Video is too long (limit is {max_dur // 60} minutes).")
+    _check_duration(info)
 
     # Quality = short side, so a 720x1280 portrait TikTok/Short counts as
     # 720p. This matches how yt-dlp's "res" sort caps resolution.
@@ -196,7 +217,8 @@ def download(url: str, height: int | None = None) -> tuple[Path, str]:
     Returns (file_path, suggested_filename). Caller must delete file_path.parent.
     """
     platform = detect_platform(url)
-    tmpdir = Path(tempfile.mkdtemp(prefix="grabline-"))
+    _remove_stale_tempdirs()
+    tmpdir = Path(tempfile.mkdtemp(prefix=TEMP_PREFIX))
     opts = {
         **_base_opts(),
         **_format_opts(height),
@@ -204,10 +226,18 @@ def download(url: str, height: int | None = None) -> tuple[Path, str]:
     }
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=True)
+            # Read the details first so the length limit applies here too;
+            # /api/download can be called without going through /api/resolve.
+            info = ydl.extract_info(url, download=False)
+            if info:
+                _check_duration(next((e for e in info.get("entries") or [] if e), info))
+            info = ydl.process_ie_result(info, download=True)
     except yt_dlp.utils.DownloadError as e:
         _rmtree(tmpdir)
         raise ExtractionError(_clean_error(e, url, platform)) from e
+    except Exception:
+        _rmtree(tmpdir)
+        raise
 
     files = [p for p in tmpdir.iterdir() if p.is_file() and not p.name.endswith((".part", ".ytdl"))]
     if not files:
@@ -273,6 +303,17 @@ def _make_compatible(path: Path) -> Path:
         raise ExtractionError("We downloaded the video but couldn't prepare it. Please try again.")
     path.unlink(missing_ok=True)
     return out
+
+
+def _remove_stale_tempdirs() -> None:
+    """Clear what a crash or a timed-out request left behind."""
+    cutoff = time.time() - STALE_TEMP_SECONDS
+    for path in Path(tempfile.gettempdir()).glob(TEMP_PREFIX + "*"):
+        try:
+            if path.is_dir() and path.stat().st_mtime < cutoff:
+                _rmtree(path)
+        except OSError:
+            pass  # another request got to it first
 
 
 def _rmtree(path: Path) -> None:

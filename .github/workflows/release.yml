@@ -1,0 +1,53 @@
+# Pushing a version tag (e.g. v1.0.1) builds Grabline.exe and publishes it as a release.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: pip install -r requirements-exe.txt
+
+      - name: Run tests
+        run: python manage.py test core
+
+      - name: Build exe
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force vendor | Out-Null
+          Copy-Item (Get-Command node).Source vendor/node.exe
+          pyinstaller grabline.spec
+
+      - name: Check the exe starts and serves the page
+        shell: pwsh
+        env:
+          GRABLINE_NO_BROWSER: "1"
+        run: |
+          $app = Start-Process dist/Grabline.exe -PassThru
+          $status = 0
+          foreach ($i in 1..60) {
+            Start-Sleep -Seconds 2
+            try { $status = (Invoke-WebRequest http://127.0.0.1:8765/ -UseBasicParsing).StatusCode; break } catch {}
+          }
+          Stop-Process -Id $app.Id -Force
+          if ($status -ne 200) { throw "Grabline.exe did not serve the page" }
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" dist/Grabline.exe --title "Grabline ${{ github.ref_name }}" --generate-notes
