@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>grabline — paste a link, get the file</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #14161a;
+    --bg-raised: #1b1f25;
+    --line: #262b33;
+    --text: #edeef0;
+    --muted: #8b93a1;
+    --accent: #4ce0b3;
+    --accent-dim: #2f8f70;
+    --error: #ff6b6b;
+  }
+  *{ box-sizing: border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding: 64px 20px 40px;
+  }
+  .wrap{ width:100%; max-width: 640px; }
+  .eyebrow{
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 10px;
+  }
+  h1{
+    font-family:'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: clamp(28px, 5vw, 40px);
+    line-height: 1.1;
+    margin: 0 0 12px;
+    letter-spacing: -0.01em;
+  }
+  p.sub{
+    color: var(--muted);
+    font-size: 15px;
+    line-height: 1.5;
+    margin: 0 0 36px;
+    max-width: 46ch;
+  }
+  form{
+    display:flex;
+    gap: 8px;
+    background: var(--bg-raised);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 6px;
+  }
+  form:focus-within{
+    border-color: var(--accent-dim);
+  }
+  input[type=url]{
+    flex:1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 14px;
+    padding: 12px 10px;
+  }
+  input[type=url]::placeholder{ color: #565d68; }
+  button{
+    font-family:'Space Grotesk', sans-serif;
+    font-weight: 600;
+    font-size: 14px;
+    background: var(--accent);
+    color: #0b1210;
+    border: none;
+    border-radius: 6px;
+    padding: 0 20px;
+    cursor: pointer;
+    transition: transform .12s ease, background .12s ease;
+  }
+  button:hover{ background: #63e9c2; }
+  button:active{ transform: scale(0.97); }
+  button:disabled{ background: #3a4046; color: #7b828c; cursor: progress; }
+
+  .platforms{
+    display:flex;
+    gap: 14px;
+    margin-top: 16px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .platforms span{ position:relative; padding-left: 14px; }
+  .platforms span::before{
+    content:'';
+    position:absolute; left:0; top:50%; transform:translateY(-50%);
+    width:5px; height:5px; border-radius:50%;
+    background: var(--accent-dim);
+  }
+
+  .status{
+    margin-top: 20px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 13px;
+    color: var(--muted);
+    min-height: 18px;
+  }
+  .status.error{ color: var(--error); }
+
+  .card{
+    display:none;
+    margin-top: 24px;
+    background: var(--bg-raised);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .card.show{ display:block; animation: rise .25s ease; }
+  @keyframes rise{ from{ opacity:0; transform: translateY(6px);} to{opacity:1; transform:none;} }
+
+  .card img{
+    width: 100%;
+    display:block;
+    aspect-ratio: 16/9;
+    object-fit: cover;
+    background: #0f1114;
+  }
+  .card-body{ padding: 18px 20px 20px; }
+  .card-title{
+    font-family:'Space Grotesk', sans-serif;
+    font-weight: 600;
+    font-size: 16px;
+    margin: 0 0 10px;
+  }
+  .meta-row{
+    display:flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .pill{
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 4px 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .pill.accent{ color: var(--accent); border-color: var(--accent-dim); }
+
+  .dl-btn{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    width: 100%;
+    justify-content:center;
+    background: var(--accent);
+    color: #0b1210;
+    font-family:'Space Grotesk', sans-serif;
+    font-weight: 600;
+    font-size: 14px;
+    text-decoration:none;
+    padding: 12px 0;
+    border-radius: 8px;
+  }
+  .dl-btn:hover{ background: #63e9c2; }
+  .dl-btn.busy{ background:#3a4046; color:#7b828c; pointer-events:none; }
+  .qualities{ display:flex; flex-wrap:wrap; gap:8px; }
+  .qualities .dl-btn{ width:auto; flex:1 1 90px; padding: 10px 14px; }
+  .qualities .dl-btn.secondary{ background: transparent; color: var(--text); border:1px solid var(--line); }
+  .qualities .dl-btn.secondary:hover{ border-color: var(--accent-dim); color: var(--accent); }
+  .hint{ margin:10px 0 0; font-size:12px; color: var(--muted); font-family:'IBM Plex Mono', monospace; }
+
+  footer{
+    margin-top: auto;
+    padding-top: 48px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: #565d68;
+    text-align:center;
+    max-width: 46ch;
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <p class="eyebrow">// personal grab tool</p>
+    <h1>Paste a link.<br>Get the file.</h1>
+    <p class="sub">HD, watermark-free downloads from TikTok, Instagram, YouTube and Facebook. No ads, no sign-up.</p>
+
+    <form id="resolve-form">
+      <input type="url" id="url-input" placeholder="https://www.tiktok.com/@user/video/..." required>
+      <button type="submit" id="submit-btn">Grab it</button>
+    </form>
+
+    <div class="platforms">
+      <span>TikTok</span>
+      <span>Instagram</span>
+      <span>YouTube</span>
+      <span>Facebook</span>
+    </div>
+
+    <div class="status" id="status"></div>
+
+    <div class="card" id="result-card">
+      <img id="result-thumb" alt="">
+      <div class="card-body">
+        <p class="card-title" id="result-title">—</p>
+        <div class="meta-row" id="result-meta"></div>
+        <div class="qualities" id="qualities"></div>
+        <p class="hint" id="dl-hint"></p>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    For personal use only. Respect the rights holders and the terms of the platforms you're pulling from.
+  </footer>
+
+<script>
+const form = document.getElementById('resolve-form');
+const input = document.getElementById('url-input');
+const btn = document.getElementById('submit-btn');
+const statusEl = document.getElementById('status');
+const card = document.getElementById('result-card');
+const thumb = document.getElementById('result-thumb');
+const titleEl = document.getElementById('result-title');
+const metaEl = document.getElementById('result-meta');
+const qualitiesEl = document.getElementById('qualities');
+const hintEl = document.getElementById('dl-hint');
+let currentUrl = '';
+
+function csrfToken(){
+  const m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
+}
+function qLabel(h){
+  return h >= 2160 ? '4K' : h >= 1440 ? '1440p' : h + 'p';
+}
+const GENERIC_ERROR = "Something went wrong. Please check the link and try again.";
+let dlFrame = null, dlPoll = null, dlTimeout = null;
+
+function resetButtons(){
+  qualitiesEl.querySelectorAll('.dl-btn').forEach(b => { b.classList.remove('busy'); b.textContent = b.dataset.label; });
+}
+function finishDownload(){
+  clearInterval(dlPoll); clearTimeout(dlTimeout);
+  resetButtons();
+}
+function showError(msg){
+  statusEl.textContent = msg || GENERIC_ERROR;
+  statusEl.classList.add('error');
+}
+
+// Downloads run in a hidden iframe so a failure never navigates away from
+// the page. Success: the server sets a "grabline_dl" cookie with our token
+// as the file starts. Failure: the iframe loads a plain-text error message.
+function startDownload(btn, q){
+  const token = Math.random().toString(36).slice(2, 12) + Date.now().toString(36);
+  const params = new URLSearchParams({url: currentUrl, t: token});
+  if(q) params.set('q', q);
+
+  if(dlFrame) dlFrame.remove();
+  finishDownload();
+  qualitiesEl.querySelectorAll('.dl-btn').forEach(b => b.classList.add('busy'));
+  btn.textContent = 'Preparing…';
+  statusEl.textContent = 'Ready.';
+  statusEl.classList.remove('error');
+  hintEl.textContent = 'Building your HD file. Your download starts automatically, longer videos take a bit.';
+
+  dlFrame = document.createElement('iframe');
+  dlFrame.style.display = 'none';
+  dlFrame.addEventListener('load', () => {
+    // Attachments usually don't fire "load", so this normally means the
+    // server sent an error. Some browsers fire it on success too, so give
+    // the success cookie a moment before treating it as a failure.
+    let msg = '';
+    try { msg = (dlFrame.contentDocument.body.innerText || '').trim(); } catch (_) {}
+    if(msg.length > 300 || msg.startsWith('<')) msg = '';
+    setTimeout(() => {
+      if(document.cookie.includes('grabline_dl=' + token)) return;
+      finishDownload();
+      hintEl.textContent = '';
+      showError(msg);
+    }, msg ? 0 : 1500);
+  });
+  dlFrame.src = '/api/download?' + params.toString();
+  document.body.appendChild(dlFrame);
+
+  dlPoll = setInterval(() => {
+    if(document.cookie.includes('grabline_dl=' + token)){
+      finishDownload();
+      hintEl.textContent = 'Download started. Check your downloads folder.';
+    }
+  }, 500);
+  dlTimeout = setTimeout(() => {
+    finishDownload();
+    hintEl.textContent = '';
+    showError('This is taking too long. Please try again, or pick a lower quality.');
+  }, 10 * 60 * 1000);
+}
+
+function fmtDuration(sec){
+  if(!sec) return null;
+  const m = Math.floor(sec/60), s = Math.round(sec%60);
+  return `${m}:${String(s).padStart(2,'0')}`;
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const url = input.value.trim();
+  if(!url) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Grabbing…';
+  statusEl.textContent = 'Resolving link…';
+  statusEl.classList.remove('error');
+  card.classList.remove('show');
+
+  try {
+    const res = await fetch('/api/resolve', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken()},
+      body: JSON.stringify({url})
+    });
+    let data;
+    try { data = await res.json(); } catch (_) { throw new Error(GENERIC_ERROR); }
+
+    if(!res.ok){
+      throw new Error(data.error || 'Something went wrong.');
+    }
+
+    titleEl.textContent = data.title;
+    thumb.src = data.thumbnail || '';
+    thumb.style.display = data.thumbnail ? 'block' : 'none';
+
+    metaEl.innerHTML = '';
+    const pills = [
+      data.platform,
+      data.width && data.height ? `${data.width}×${data.height}` : null,
+      fmtDuration(data.duration),
+      data.uploader ? '@' + String(data.uploader).replace(/^@/, '') : null
+    ].filter(Boolean);
+    pills.forEach((p, i) => {
+      const span = document.createElement('span');
+      span.className = 'pill' + (i === 0 ? ' accent' : '');
+      span.textContent = p;
+      metaEl.appendChild(span);
+    });
+
+    currentUrl = url;
+    qualitiesEl.innerHTML = '';
+    hintEl.textContent = '';
+    const qs = data.qualities && data.qualities.length ? data.qualities : [null];
+    qs.forEach((h, i) => {
+      const a = document.createElement('a');
+      a.href = '#';
+      a.className = 'dl-btn' + (i === 0 ? '' : ' secondary');
+      a.dataset.label = h ? (qs.length > 1 ? qLabel(h) : `Download ${h >= 720 ? 'HD ' : ''}(${qLabel(h)})`) : 'Download';
+      a.textContent = a.dataset.label;
+      a.addEventListener('click', (ev) => { ev.preventDefault(); startDownload(a, data.platform === 'youtube' ? h : null); });
+      qualitiesEl.appendChild(a);
+    });
+
+    card.classList.add('show');
+    statusEl.textContent = 'Ready.';
+  } catch (err) {
+    // Network failures surface as TypeError ("Failed to fetch") - not user-friendly.
+    showError(err instanceof TypeError ? "Couldn't connect. Check your internet connection and try again." : err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Grab it';
+  }
+});
+</script>
+</body>
+</html>
