@@ -3,283 +3,693 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>grabline — paste a link, get the file</title>
+<title>Grabline — paste a link, get the file</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg: #14161a;
-    --bg-raised: #1b1f25;
-    --line: #262b33;
-    --text: #edeef0;
-    --muted: #8b93a1;
-    --accent: #4ce0b3;
-    --accent-dim: #2f8f70;
-    --error: #ff6b6b;
+    --bg: #0c0d0a;
+    --surface: #15160f;
+    --surface-2: #1d1f16;
+    --line: #2b2d21;
+    --text: #f3f4ea;
+    --muted: #a3a593;
+    --faint: #7a7c6c;
+    --accent: #c9f53b;
+    --accent-hover: #d9ff5e;
+    --on-accent: #12140a;
+    --error: #ff8a75;
+    --display: 'Bricolage Grotesque', 'Segoe UI', sans-serif;
+    --body: 'Instrument Sans', 'Segoe UI', sans-serif;
+    --mono: 'JetBrains Mono', Consolas, monospace;
   }
   *{ box-sizing: border-box; }
   html,body{ margin:0; padding:0; }
+  html{ scrollbar-gutter: stable; }
   body{
     background: var(--bg);
     color: var(--text);
-    font-family: 'Inter', sans-serif;
+    font-family: var(--body);
     min-height: 100vh;
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    padding: 64px 20px 40px;
+    display: flex;
+    flex-direction: column;
+    -webkit-font-smoothing: antialiased;
   }
-  .wrap{ width:100%; max-width: 640px; }
-  .eyebrow{
-    font-family:'IBM Plex Mono', monospace;
-    font-size: 12px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--accent);
-    margin: 0 0 10px;
+  /* Soft glow behind the input; it brightens while the app is working. */
+  body::before{
+    content: '';
+    position: fixed;
+    inset: -20vh 0 auto;
+    height: 80vh;
+    background: radial-gradient(50% 50% at 50% 50%, rgba(201,245,59,.10), transparent 70%);
+    opacity: .7;
+    transition: opacity .5s ease;
+    pointer-events: none;
   }
-  h1{
-    font-family:'Space Grotesk', sans-serif;
-    font-weight: 700;
-    font-size: clamp(28px, 5vw, 40px);
-    line-height: 1.1;
-    margin: 0 0 12px;
-    letter-spacing: -0.01em;
+  body.working::before{ opacity: 1; }
+  a{ color: inherit; }
+  svg{ display: block; }
+  .icon{ width: 18px; height: 18px; fill: currentColor; flex: none; }
+  :focus-visible{ outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  header, main, footer{
+    position: relative;
+    width: 100%;
+    max-width: 720px;
+    margin: 0 auto;
+    padding-inline: 24px;
   }
-  p.sub{
+  header{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-block: 24px;
+  }
+  .wordmark{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: 19px;
+    letter-spacing: -.02em;
+  }
+  .wordmark i{
+    width: 24px;
+    height: 24px;
+    border-radius: 7px;
+    background: var(--accent);
+    color: var(--on-accent);
+    display: grid;
+    place-items: center;
+  }
+  .wordmark .icon{ width: 14px; height: 14px; }
+  .source{
+    display: flex;
+    align-items: center;
+    gap: 7px;
     color: var(--muted);
-    font-size: 15px;
+    font-size: 13px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: color .15s ease;
+  }
+  .source:hover{ color: var(--text); }
+  .source .icon{ width: 16px; height: 16px; }
+
+  main{ flex: 1; padding-block: 56px 32px; }
+  h1{
+    font-family: var(--display);
+    font-weight: 800;
+    font-size: clamp(46px, 10vw, 84px);
+    line-height: .95;
+    letter-spacing: -.045em;
+    margin: 0 0 20px;
+    transition: font-size .4s ease;
+  }
+  h1 em{ font-style: normal; color: var(--accent); }
+  .sub{
+    color: var(--muted);
+    font-size: 18px;
     line-height: 1.5;
     margin: 0 0 36px;
-    max-width: 46ch;
+    max-width: 44ch;
   }
+  /* Once there's a result, the hero steps back so the video is the focus. */
+  body.has-result h1{ font-size: clamp(30px, 6vw, 40px); margin-bottom: 24px; }
+  body.has-result h1 br{ display: none; }
+  body.has-result .sub{ display: none; }
+  body.has-result main{ padding-top: 24px; }
+
   form{
-    display:flex;
-    gap: 8px;
-    background: var(--bg-raised);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    padding: 6px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--surface);
+    border: 1.5px solid var(--line);
+    border-radius: 16px;
+    padding: 8px 8px 8px 18px;
+    transition: border-color .15s ease, box-shadow .15s ease;
   }
   form:focus-within{
-    border-color: var(--accent-dim);
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px rgba(201,245,59,.12);
   }
+  #detected{
+    color: var(--faint);
+    display: grid;
+    place-items: center;
+    transition: color .15s ease;
+  }
+  #detected.on{ color: var(--accent); }
+  #detected .icon{ width: 20px; height: 20px; }
   input[type=url]{
-    flex:1;
+    flex: 1;
+    min-width: 0;
+    height: 48px;
     background: transparent;
     border: none;
     outline: none;
     color: var(--text);
-    font-family: 'IBM Plex Mono', monospace;
+    font-family: var(--mono);
     font-size: 14px;
-    padding: 12px 10px;
   }
-  input[type=url]::placeholder{ color: #565d68; }
-  button{
-    font-family:'Space Grotesk', sans-serif;
-    font-weight: 600;
+  input[type=url]::placeholder{ color: var(--faint); }
+  button{ font: inherit; cursor: pointer; border: none; }
+  .ghost{
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    height: 48px;
+    padding-inline: 12px;
+    background: none;
+    border-radius: 10px;
+    color: var(--muted);
+    font-weight: 500;
     font-size: 14px;
+    transition: color .15s ease, background .15s ease;
+  }
+  .ghost:hover{ color: var(--text); background: var(--surface-2); }
+  .ghost .icon{ width: 16px; height: 16px; }
+  .primary{
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    min-height: 48px;
+    padding-inline: 22px;
     background: var(--accent);
-    color: #0b1210;
-    border: none;
-    border-radius: 6px;
-    padding: 0 20px;
-    cursor: pointer;
-    transition: transform .12s ease, background .12s ease;
+    color: var(--on-accent);
+    border-radius: 10px;
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 15px;
+    white-space: nowrap;
+    transition: background .15s ease, transform .1s ease;
   }
-  button:hover{ background: #63e9c2; }
-  button:active{ transform: scale(0.97); }
-  button:disabled{ background: #3a4046; color: #7b828c; cursor: progress; }
+  .primary:hover{ background: var(--accent-hover); }
+  .primary:active{ transform: scale(.975); }
+  .primary:disabled{ cursor: progress; background: var(--surface-2); color: var(--muted); }
+  .spinner{
+    width: 15px;
+    height: 15px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: spin .7s linear infinite;
+  }
+  @keyframes spin{ to{ transform: rotate(360deg); } }
 
   .platforms{
-    display:flex;
-    gap: 14px;
-    margin-top: 16px;
-    font-family:'IBM Plex Mono', monospace;
-    font-size: 12px;
-    color: var(--muted);
+    list-style: none;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    margin: 18px 0 0;
+    padding: 0 2px;
   }
-  .platforms span{ position:relative; padding-left: 14px; }
-  .platforms span::before{
-    content:'';
-    position:absolute; left:0; top:50%; transform:translateY(-50%);
-    width:5px; height:5px; border-radius:50%;
-    background: var(--accent-dim);
-  }
-
-  .status{
-    margin-top: 20px;
-    font-family:'IBM Plex Mono', monospace;
+  .platforms li{
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--faint);
     font-size: 13px;
-    color: var(--muted);
-    min-height: 18px;
+    font-weight: 500;
+    transition: color .15s ease;
   }
-  .status.error{ color: var(--error); }
+  .platforms li.on{ color: var(--accent); }
+  .platforms .icon{ width: 14px; height: 14px; }
+
+  .alert{
+    display: none;
+    gap: 10px;
+    margin-top: 20px;
+    padding: 14px 16px;
+    border: 1px solid rgba(255,138,117,.3);
+    border-radius: 12px;
+    background: rgba(255,138,117,.08);
+    color: var(--error);
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  .alert.show{ display: flex; animation: rise .25s ease; }
+  .alert .icon{ margin-top: 1px; }
 
   .card{
-    display:none;
+    display: none;
     margin-top: 24px;
-    background: var(--bg-raised);
+    background: var(--surface);
     border: 1px solid var(--line);
-    border-radius: 12px;
+    border-radius: 18px;
     overflow: hidden;
   }
-  .card.show{ display:block; animation: rise .25s ease; }
-  @keyframes rise{ from{ opacity:0; transform: translateY(6px);} to{opacity:1; transform:none;} }
+  .card.show{ display: grid; animation: rise .35s cubic-bezier(.2,.8,.2,1); }
+  @keyframes rise{ from{ opacity: 0; transform: translateY(10px); } to{ opacity: 1; transform: none; } }
 
-  .card img{
+  /* Thumbnail layout follows the video. Wide: beside the title with controls
+     below, which keeps the download button on screen. Portrait: full height. */
+  .card:not(.portrait){
+    grid-template-columns: 288px minmax(0, 1fr);
+    gap: 18px 20px;
+    padding: 18px;
+  }
+  .card:not(.portrait) .media{ border-radius: 10px; }
+  .card:not(.portrait) .details{ display: contents; }
+  .card:not(.portrait) .heading{ align-self: center; }
+  .card:not(.portrait) .action{ grid-column: 1 / -1; }
+  .card:not(.portrait) .title{ margin-bottom: 0; }
+  .card.portrait{ grid-template-columns: 216px minmax(0, 1fr); }
+  .media{
+    position: relative;
+    aspect-ratio: 16 / 9;
+    background: var(--surface-2);
+    overflow: hidden;
+  }
+  .card.portrait .media{ aspect-ratio: 9 / 16; }
+  .media img{
     width: 100%;
-    display:block;
-    aspect-ratio: 16/9;
+    height: 100%;
     object-fit: cover;
-    background: #0f1114;
+    display: block;
+    animation: appear .4s ease;
   }
-  .card-body{ padding: 18px 20px 20px; }
-  .card-title{
-    font-family:'Space Grotesk', sans-serif;
-    font-weight: 600;
-    font-size: 16px;
-    margin: 0 0 10px;
+  @keyframes appear{ from{ opacity: 0; } to{ opacity: 1; } }
+  .duration{
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    background: rgba(12,13,10,.82);
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 500;
   }
-  .meta-row{
-    display:flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 16px;
+  .details{
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    padding: 22px;
   }
-  .pill{
-    font-family:'IBM Plex Mono', monospace;
-    font-size: 11px;
+  .origin{
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    margin: 0 0 8px;
     color: var(--muted);
-    border: 1px solid var(--line);
-    border-radius: 999px;
-    padding: 4px 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
+    font-size: 13px;
+    font-weight: 500;
   }
-  .pill.accent{ color: var(--accent); border-color: var(--accent-dim); }
+  .origin .icon{ width: 14px; height: 14px; color: var(--accent); }
+  .origin span{ overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .title{
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 21px;
+    line-height: 1.2;
+    letter-spacing: -.015em;
+    margin: 0 0 22px;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .spec{
+    margin: -12px 0 22px;
+    color: var(--faint);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .card:not(.portrait) .spec{ margin: 8px 0 0; }
+  .card.portrait .action{ margin-top: auto; }
 
-  .dl-btn{
-    display:inline-flex;
-    align-items:center;
-    gap:8px;
-    width: 100%;
-    justify-content:center;
-    background: var(--accent);
-    color: #0b1210;
-    font-family:'Space Grotesk', sans-serif;
+  .label{
+    margin: 0 0 8px;
+    color: var(--faint);
+    font-size: 12px;
     font-weight: 600;
-    font-size: 14px;
-    text-decoration:none;
-    padding: 12px 0;
-    border-radius: 8px;
   }
-  .dl-btn:hover{ background: #63e9c2; }
-  .dl-btn.busy{ background:#3a4046; color:#7b828c; pointer-events:none; }
-  .qualities{ display:flex; flex-wrap:wrap; gap:8px; }
-  .qualities .dl-btn{ width:auto; flex:1 1 90px; padding: 10px 14px; }
-  .qualities .dl-btn.secondary{ background: transparent; color: var(--text); border:1px solid var(--line); }
-  .qualities .dl-btn.secondary:hover{ border-color: var(--accent-dim); color: var(--accent); }
-  .hint{ margin:10px 0 0; font-size:12px; color: var(--muted); font-family:'IBM Plex Mono', monospace; }
+  .qualities{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0 0 14px;
+    padding: 0;
+    border: none;
+  }
+  .quality{
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 38px;
+    padding-inline: 13px;
+    background: transparent;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 600;
+    transition: border-color .12s ease, background .12s ease, color .12s ease;
+  }
+  .quality:hover{ border-color: var(--faint); }
+  .quality[aria-checked=true]{
+    border-color: var(--accent);
+    background: rgba(201,245,59,.12);
+    color: var(--accent);
+  }
+  .quality small{
+    color: var(--faint);
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 500;
+  }
+  .quality[aria-checked=true] small{ color: inherit; }
+  .note{
+    margin: -6px 0 14px;
+    color: var(--faint);
+    font-size: 13px;
+    line-height: 1.4;
+  }
+  .download{ width: 100%; min-height: 52px; font-size: 16px; }
+
+  /* The server can't report a percentage, so this shows activity, not progress. */
+  .progress{
+    height: 6px;
+    margin-bottom: 12px;
+    border-radius: 99px;
+    background: var(--surface-2);
+    overflow: hidden;
+  }
+  .progress div{
+    width: 40%;
+    height: 100%;
+    border-radius: 99px;
+    background: var(--accent);
+    animation: slide 1.3s cubic-bezier(.45,.05,.55,.95) infinite;
+  }
+  @keyframes slide{ from{ transform: translateX(-100%); } to{ transform: translateX(250%); } }
+  .progress-text{
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .progress-text time{ color: var(--muted); font-family: var(--mono); font-size: 13px; }
+  .progress-note{ margin: 6px 0 0; color: var(--faint); font-size: 13px; }
+
+  .done{
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .done i{
+    width: 36px;
+    height: 36px;
+    flex: none;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--on-accent);
+    animation: pop .4s cubic-bezier(.2,1.6,.4,1);
+  }
+  @keyframes pop{ from{ transform: scale(.4); opacity: 0; } to{ transform: none; opacity: 1; } }
+  .done strong{ display: block; font-family: var(--display); font-size: 17px; font-weight: 700; }
+  .done span{ color: var(--muted); font-size: 13px; }
+  .another{
+    width: 100%;
+    height: 46px;
+    justify-content: center;
+    border: 1px solid var(--line);
+    color: var(--text);
+  }
+
+  .skeleton .media, .skeleton .bar{
+    background: linear-gradient(100deg, var(--surface-2) 30%, #2a2c20 50%, var(--surface-2) 70%);
+    background-size: 220% 100%;
+    animation: shimmer 1.3s linear infinite;
+  }
+  @keyframes shimmer{ from{ background-position: 120% 0; } to{ background-position: -120% 0; } }
+  .bar{ height: 14px; border-radius: 6px; margin-bottom: 12px; }
+  .bar.tall{ height: 26px; margin-bottom: 22px; }
+  .bar.button{ height: 52px; border-radius: 10px; margin: 0; }
 
   footer{
-    margin-top: auto;
-    padding-top: 48px;
-    font-family:'IBM Plex Mono', monospace;
-    font-size: 11px;
-    color: #565d68;
-    text-align:center;
-    max-width: 46ch;
+    padding-block: 20px 28px;
+    color: var(--faint);
+    font-size: 12.5px;
+    line-height: 1.5;
+  }
+
+  [hidden]{ display: none !important; }
+
+  @media (max-width: 560px){
+    main{ padding-top: 28px; }
+    .sub{ font-size: 16px; }
+    #paste-btn span{ display: none; }
+    .primary{ padding-inline: 16px; }
+    .card:not(.portrait), .card.portrait{ grid-template-columns: minmax(0, 1fr); }
+    .card.portrait .media{ aspect-ratio: 1 / 1; }
+  }
+  @media (prefers-reduced-motion: reduce){
+    *, *::before, *::after{ animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
   }
 </style>
 </head>
 <body>
-  <div class="wrap">
-    <p class="eyebrow">// personal grab tool</p>
-    <h1>Paste a link.<br>Get the file.</h1>
-    <p class="sub">HD, watermark-free downloads from TikTok, Instagram, YouTube and Facebook. No ads, no sign-up.</p>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-tiktok" viewBox="0 0 24 24"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.35 3.94-1.31 1.92-3.58 3.17-5.91 3.21-1.43.08-2.86-.31-4.08-1.03-2.02-1.19-3.44-3.37-3.65-5.71-.02-.5-.03-1-.01-1.49.18-1.9 1.12-3.72 2.58-4.96 1.66-1.44 3.98-2.13 6.15-1.72.02 1.48-.04 2.96-.04 4.44-.99-.32-2.15-.23-3.02.37-.63.41-1.11 1.04-1.36 1.75-.21.51-.15 1.07-.14 1.61.24 1.64 1.82 3.02 3.5 2.87 1.12-.01 2.19-.66 2.77-1.61.19-.33.4-.67.41-1.06.1-1.79.06-3.57.07-5.36.01-4.03-.01-8.05.02-12.07z"/></symbol>
+    <symbol id="i-instagram" viewBox="0 0 24 24"><path fill-rule="evenodd" d="M7 1h10a6 6 0 0 1 6 6v10a6 6 0 0 1-6 6H7a6 6 0 0 1-6-6V7a6 6 0 0 1 6-6zm0 2.2A3.8 3.8 0 0 0 3.2 7v10A3.8 3.8 0 0 0 7 20.8h10a3.8 3.8 0 0 0 3.8-3.8V7A3.8 3.8 0 0 0 17 3.2H7zm5 3.1a5.7 5.7 0 1 1 0 11.4 5.7 5.7 0 0 1 0-11.4zm0 2.2a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zm5.9-3.8a1.35 1.35 0 1 1 0 2.7 1.35 1.35 0 0 1 0-2.7z"/></symbol>
+    <symbol id="i-youtube" viewBox="0 0 24 24"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></symbol>
+    <symbol id="i-facebook" viewBox="0 0 24 24"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></symbol>
+    <symbol id="i-link" viewBox="0 0 24 24"><path d="M10.6 13.4a1 1 0 0 1 0-1.4l3.5-3.5a1 1 0 1 1 1.4 1.4L12 13.4a1 1 0 0 1-1.4 0zm-2.1 4.9a4.5 4.5 0 0 1-3.2-7.7l2.1-2.1a1 1 0 1 1 1.4 1.4l-2.1 2.1a2.5 2.5 0 0 0 3.5 3.5l2.1-2.1a1 1 0 1 1 1.4 1.4l-2.1 2.1a4.5 4.5 0 0 1-3.1 1.4zm8.1-5.7a1 1 0 0 1-.7-1.7l2.1-2.1a2.5 2.5 0 0 0-3.5-3.5L12.4 7a1 1 0 1 1-1.4-1.4l2.1-2.1a4.5 4.5 0 0 1 6.4 6.4l-2.1 2.1a1 1 0 0 1-.8.6z"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 2a1.5 1.5 0 0 1 1.5 1.5v10.4l3.4-3.4a1.5 1.5 0 0 1 2.1 2.1l-6 6a1.5 1.5 0 0 1-2.1 0l-6-6a1.5 1.5 0 0 1 2.1-2.1l3.5 3.4V3.5A1.5 1.5 0 0 1 12 2zM4.5 19.5h15a1.25 1.25 0 0 1 0 2.5h-15a1.25 1.25 0 0 1 0-2.5z"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M9.5 18.2a1.5 1.5 0 0 1-1.1-.4l-4.4-4.4a1.5 1.5 0 0 1 2.1-2.1l3.4 3.3 8.4-8.3A1.5 1.5 0 0 1 20 8.4l-9.4 9.4a1.5 1.5 0 0 1-1.1.4z"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 1.5a10.5 10.5 0 1 1 0 21 10.5 10.5 0 0 1 0-21zm0 5a1.2 1.2 0 0 0-1.2 1.2v5a1.2 1.2 0 0 0 2.4 0v-5A1.2 1.2 0 0 0 12 6.500zm0 8.800a1.400 1.400 0 1 0 0 2.800 1.400 1.400 0 0 0 0-2.800z"/></symbol>
+    <symbol id="i-paste" viewBox="0 0 24 24"><path d="M9 2h6a2 2 0 0 1 2 1.500h1.500A2.500 2.500 0 0 1 21 6v13.500a2.500 2.500 0 0 1-2.500 2.500h-13A2.500 2.500 0 0 1 3 19.500V6a2.500 2.500 0 0 1 2.500-2.500H7A2 2 0 0 1 9 2zm0 2v2h6V4H9zM7 5.500H5.500a.5.500 0 0 0-.5.500v13.500a.5.500 0 0 0 .5.500h13a.5.500 0 0 0 .5-.500V6a.5.500 0 0 0-.5-.500H17A2 2 0 0 1 15 8H9a2 2 0 0 1-2-2.500z"/></symbol>
+    <symbol id="i-github" viewBox="0 0 24 24"><path d="M12 .3a12 12 0 0 0-3.800 23.400c.6.100.8-.3.8-.6v-2c-3.300.7-4-1.600-4-1.600-.6-1.400-1.400-1.800-1.400-1.800-1-.7.100-.7.100-.7 1.200.1 1.800 1.200 1.800 1.200 1.100 1.800 2.800 1.300 3.500 1 .1-.8.400-1.300.8-1.600-2.700-.3-5.500-1.300-5.500-5.900 0-1.300.5-2.400 1.200-3.200-.1-.3-.5-1.500.1-3.200 0 0 1-.3 3.300 1.200a11.500 11.500 0 0 1 6 0c2.300-1.500 3.300-1.200 3.300-1.200.6 1.700.2 2.900.1 3.200.8.800 1.200 1.900 1.200 3.200 0 4.600-2.800 5.600-5.500 5.900.4.400.8 1.100.8 2.200v3.300c0 .3.200.7.800.6A12 12 0 0 0 12 .3z"/></symbol>
+  </svg>
 
-    <form id="resolve-form">
-      <input type="url" id="url-input" placeholder="https://www.tiktok.com/@user/video/..." required>
-      <button type="submit" id="submit-btn">Grab it</button>
+  <header>
+    <div class="wordmark"><i><svg class="icon"><use href="#i-down"/></svg></i>grabline</div>
+    <a class="source" href="https://github.com/DZLimited/Grabline" target="_blank" rel="noopener">
+      <svg class="icon"><use href="#i-github"/></svg>Source
+    </a>
+  </header>
+
+  <main>
+    <h1>Paste a link. <br><em>Get the file.</em></h1>
+    <p class="sub">The best quality each platform offers, without watermarks, ready to share anywhere.</p>
+
+    <form id="resolve-form" novalidate>
+      <span id="detected"><svg class="icon"><use id="detected-icon" href="#i-link"/></svg></span>
+      <input type="url" id="url-input" placeholder="Paste a video link" aria-label="Video link" autocomplete="off" spellcheck="false" autofocus>
+      <button type="button" class="ghost" id="paste-btn"><svg class="icon"><use href="#i-paste"/></svg><span>Paste</span></button>
+      <button type="submit" class="primary" id="submit-btn">Grab it</button>
     </form>
 
-    <div class="platforms">
-      <span>TikTok</span>
-      <span>Instagram</span>
-      <span>YouTube</span>
-      <span>Facebook</span>
+    <ul class="platforms" id="platforms">
+      <li data-platform="tiktok"><svg class="icon"><use href="#i-tiktok"/></svg>TikTok</li>
+      <li data-platform="instagram"><svg class="icon"><use href="#i-instagram"/></svg>Instagram</li>
+      <li data-platform="youtube"><svg class="icon"><use href="#i-youtube"/></svg>YouTube</li>
+      <li data-platform="facebook"><svg class="icon"><use href="#i-facebook"/></svg>Facebook</li>
+    </ul>
+
+    <div class="alert" id="alert" role="alert">
+      <svg class="icon"><use href="#i-alert"/></svg>
+      <span id="alert-text"></span>
     </div>
 
-    <div class="status" id="status"></div>
-
-    <div class="card" id="result-card">
-      <img id="result-thumb" alt="">
-      <div class="card-body">
-        <p class="card-title" id="result-title">—</p>
-        <div class="meta-row" id="result-meta"></div>
-        <div class="qualities" id="qualities"></div>
-        <p class="hint" id="dl-hint"></p>
+    <div class="card skeleton" id="skeleton" aria-hidden="true">
+      <div class="media"></div>
+      <div class="details">
+        <div class="heading">
+          <div class="bar" style="width:40%"></div>
+          <div class="bar tall" style="width:90%; margin-bottom:0"></div>
+        </div>
+        <div class="action"><div class="bar button"></div></div>
       </div>
     </div>
-  </div>
 
-  <footer>
-    For personal use only. Respect the rights holders and the terms of the platforms you're pulling from.
-  </footer>
+    <section class="card" id="result-card" aria-live="polite">
+      <div class="media">
+        <img id="result-thumb" alt="" referrerpolicy="no-referrer">
+        <span class="duration" id="result-duration" hidden></span>
+      </div>
+      <div class="details">
+        <div class="heading">
+          <p class="origin"><svg class="icon"><use id="origin-icon" href="#i-link"/></svg><span id="result-origin"></span></p>
+          <h2 class="title" id="result-title"></h2>
+          <p class="spec" id="result-spec" hidden></p>
+        </div>
+        <div class="action">
+          <div id="state-choose">
+            <div id="quality-group">
+              <p class="label" id="quality-label">Quality</p>
+              <div class="qualities" id="qualities" role="radiogroup" aria-labelledby="quality-label"></div>
+              <p class="note" id="quality-note" hidden>This quality is converted so it plays everywhere, which takes longer.</p>
+            </div>
+            <button type="button" class="primary download" id="download-btn">
+              <svg class="icon"><use href="#i-down"/></svg><span id="download-label">Download</span>
+            </button>
+          </div>
+          <div id="state-working" hidden>
+            <div class="progress"><div></div></div>
+            <div class="progress-text"><span id="working-text"></span><time id="working-time">0:00</time></div>
+            <p class="progress-note">Your download starts by itself when the file is ready.</p>
+          </div>
+          <div id="state-done" hidden>
+            <div class="done">
+              <i><svg class="icon"><use href="#i-check"/></svg></i>
+              <div><strong>Your file is on its way</strong><span>Check your Downloads folder.</span></div>
+            </div>
+            <button type="button" class="ghost another" id="another-btn">Grab another video</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>For personal use. Respect the people who made the video and each platform's terms.</footer>
 
 <script>
-const form = document.getElementById('resolve-form');
-const input = document.getElementById('url-input');
-const btn = document.getElementById('submit-btn');
-const statusEl = document.getElementById('status');
-const card = document.getElementById('result-card');
-const thumb = document.getElementById('result-thumb');
-const titleEl = document.getElementById('result-title');
-const metaEl = document.getElementById('result-meta');
-const qualitiesEl = document.getElementById('qualities');
-const hintEl = document.getElementById('dl-hint');
+const $ = id => document.getElementById(id);
+const form = $('resolve-form');
+const input = $('url-input');
+const submitBtn = $('submit-btn');
+const pasteBtn = $('paste-btn');
+const alertEl = $('alert');
+const skeleton = $('skeleton');
+const card = $('result-card');
+const thumb = $('result-thumb');
+const qualitiesEl = $('qualities');
+const downloadBtn = $('download-btn');
+
+const GENERIC_ERROR = "Something went wrong. Please check the link and try again.";
+const HOST_ERROR = "This video took too long to prepare. Try a lower quality or a shorter video.";
+const ERROR_PREFIX = "grabline-error: ";
+// Above this, YouTube only offers VP9/AV1, which the server converts to H.264.
+const SLOW_QUALITY = 1440;
+const PLATFORMS = {
+  tiktok: {name: 'TikTok', hosts: ['tiktok.com']},
+  instagram: {name: 'Instagram', hosts: ['instagram.com']},
+  youtube: {name: 'YouTube', hosts: ['youtube.com', 'youtu.be']},
+  facebook: {name: 'Facebook', hosts: ['facebook.com', 'fb.watch', 'fb.com']},
+};
+
 let currentUrl = '';
+let currentPlatform = '';
+let selectedQuality = null;
+let dlFrame = null, dlPoll = null, dlTimeout = null, clock = null;
+
+function detectPlatform(text){
+  try {
+    const host = new URL(text.trim()).hostname.toLowerCase();
+    return Object.keys(PLATFORMS).find(p =>
+      PLATFORMS[p].hosts.some(h => host === h || host.endsWith('.' + h))) || '';
+  } catch (_) { return ''; }
+}
+function showDetected(){
+  const platform = detectPlatform(input.value);
+  $('detected').classList.toggle('on', !!platform);
+  $('detected-icon').setAttribute('href', platform ? '#i-' + platform : '#i-link');
+  document.querySelectorAll('#platforms li').forEach(li =>
+    li.classList.toggle('on', li.dataset.platform === platform));
+  pasteBtn.hidden = !!input.value || !navigator.clipboard || !navigator.clipboard.readText;
+}
 
 function csrfToken(){
   const m = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
   return m ? decodeURIComponent(m[1]) : '';
 }
-function qLabel(h){
-  return h >= 2160 ? '4K' : h >= 1440 ? '1440p' : h + 'p';
-}
-const GENERIC_ERROR = "Something went wrong. Please check the link and try again.";
-const HOST_ERROR = "This video took too long or is too large for our server. Try a lower quality or a shorter video.";
-const ERROR_PREFIX = "grabline-error: ";
-let dlFrame = null, dlPoll = null, dlTimeout = null;
-
-function resetButtons(){
-  qualitiesEl.querySelectorAll('.dl-btn').forEach(b => { b.classList.remove('busy'); b.textContent = b.dataset.label; });
-}
-function finishDownload(){
-  clearInterval(dlPoll); clearTimeout(dlTimeout);
-  resetButtons();
+function qLabel(h){ return h >= 2160 ? '4K' : h + 'p'; }
+function fmtDuration(sec){
+  if(!sec) return null;
+  const total = Math.round(sec);
+  const m = Math.floor(total / 60), s = total % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
 }
 function showError(msg){
-  statusEl.textContent = msg || GENERIC_ERROR;
-  statusEl.classList.add('error');
+  $('alert-text').textContent = msg || GENERIC_ERROR;
+  alertEl.classList.add('show');
+}
+function clearError(){ alertEl.classList.remove('show'); }
+
+function showState(name){
+  ['choose', 'working', 'done'].forEach(s => { $('state-' + s).hidden = s !== name; });
+  document.body.classList.toggle('working', name === 'working');
+}
+
+function selectQuality(h){
+  selectedQuality = h;
+  qualitiesEl.querySelectorAll('.quality').forEach(b => {
+    const on = Number(b.dataset.h) === h;
+    b.setAttribute('aria-checked', on);
+    b.tabIndex = on ? 0 : -1;
+  });
+  $('download-label').textContent = h ? `Download ${qLabel(h)}` : 'Download';
+  $('quality-note').hidden = !(h >= SLOW_QUALITY);
+}
+function buildQualities(list){
+  qualitiesEl.innerHTML = '';
+  list.forEach(h => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'quality';
+    b.setAttribute('role', 'radio');
+    b.dataset.h = h;
+    b.textContent = qLabel(h);
+    if(h >= 720){
+      const tag = document.createElement('small');
+      tag.textContent = h >= 2160 ? 'UHD' : 'HD';
+      b.appendChild(tag);
+    }
+    b.addEventListener('click', () => selectQuality(h));
+    qualitiesEl.appendChild(b);
+  });
+  // Only YouTube offers a real choice; the button names any single quality.
+  $('quality-group').hidden = list.length <= 1;
+  // Pick the best quality that converts quickly, so a click just works.
+  selectQuality(list.find(h => h < SLOW_QUALITY) || list[0] || null);
+}
+qualitiesEl.addEventListener('keydown', e => {
+  const step = {ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1}[e.key];
+  if(!step) return;
+  e.preventDefault();
+  const buttons = [...qualitiesEl.querySelectorAll('.quality')];
+  const next = buttons[(buttons.findIndex(b => Number(b.dataset.h) === selectedQuality) + step + buttons.length) % buttons.length];
+  selectQuality(Number(next.dataset.h));
+  next.focus();
+});
+
+function stopWatching(){
+  clearInterval(dlPoll); clearTimeout(dlTimeout); clearInterval(clock);
 }
 
 // Downloads run in a hidden iframe so a failure never navigates away from
 // the page. Success: the server sets a "grabline_dl" cookie with our token
 // as the file starts. Failure: the iframe loads a plain-text error message.
-function startDownload(btn, q){
+function startDownload(){
   const token = Math.random().toString(36).slice(2, 12) + Date.now().toString(36);
   const params = new URLSearchParams({url: currentUrl, t: token});
-  if(q) params.set('q', q);
+  // Other platforms have one quality, and the server already picks their best.
+  if(currentPlatform === 'youtube' && selectedQuality) params.set('q', selectedQuality);
 
   if(dlFrame) dlFrame.remove();
-  finishDownload();
-  qualitiesEl.querySelectorAll('.dl-btn').forEach(b => b.classList.add('busy'));
-  btn.textContent = 'Preparing…';
-  statusEl.textContent = 'Ready.';
-  statusEl.classList.remove('error');
-  hintEl.textContent = 'Building your HD file. Your download starts automatically, longer videos take a bit.';
+  stopWatching();
+  clearError();
+  $('working-text').textContent = selectedQuality ? `Preparing your ${qLabel(selectedQuality)} file` : 'Preparing your file';
+  $('working-time').textContent = '0:00';
+  showState('working');
+
+  const started = Date.now();
+  clock = setInterval(() => {
+    $('working-time').textContent = fmtDuration((Date.now() - started) / 1000) || '0:00';
+  }, 1000);
 
   dlFrame = document.createElement('iframe');
   dlFrame.style.display = 'none';
@@ -294,8 +704,8 @@ function startDownload(btn, q){
     const msg = text.startsWith(ERROR_PREFIX) ? text.slice(ERROR_PREFIX.length) : '';
     setTimeout(() => {
       if(document.cookie.includes('grabline_dl=' + token)) return;
-      finishDownload();
-      hintEl.textContent = '';
+      stopWatching();
+      showState('choose');
       showError(msg || HOST_ERROR);
     }, msg ? 0 : 1500);
   });
@@ -304,33 +714,56 @@ function startDownload(btn, q){
 
   dlPoll = setInterval(() => {
     if(document.cookie.includes('grabline_dl=' + token)){
-      finishDownload();
-      hintEl.textContent = 'Download started. Check your downloads folder.';
+      stopWatching();
+      showState('done');
     }
   }, 500);
   dlTimeout = setTimeout(() => {
-    finishDownload();
-    hintEl.textContent = '';
+    stopWatching();
+    showState('choose');
     showError('This is taking too long. Please try again, or pick a lower quality.');
   }, 10 * 60 * 1000);
 }
 
-function fmtDuration(sec){
-  if(!sec) return null;
-  const m = Math.floor(sec/60), s = Math.round(sec%60);
-  return `${m}:${String(s).padStart(2,'0')}`;
+function showResult(data, url){
+  currentUrl = url;
+  currentPlatform = data.platform;
+  $('result-title').textContent = data.title;
+  const iconHref = '#i-' + data.platform;
+  $('origin-icon').setAttribute('href', iconHref);
+  const name = PLATFORMS[data.platform].name;
+  $('result-origin').textContent = data.uploader ? `${name} · ${String(data.uploader).replace(/^@/, '')}` : name;
+
+  const duration = fmtDuration(data.duration);
+  $('result-duration').textContent = duration || '';
+  $('result-duration').hidden = !duration;
+
+  card.classList.toggle('portrait', !!(data.width && data.height && data.height > data.width));
+  thumb.hidden = !data.thumbnail;
+  if(data.thumbnail) thumb.src = data.thumbnail;
+
+  const qualities = data.qualities || [];
+  buildQualities(qualities);
+  // The size only describes the file when there's no quality to choose from.
+  const showSpec = qualities.length <= 1 && data.width && data.height;
+  $('result-spec').textContent = showSpec ? `${data.width} × ${data.height} · MP4` : '';
+  $('result-spec').hidden = !showSpec;
+  showState('choose');
+  card.classList.add('show');
 }
 
-form.addEventListener('submit', async (e) => {
-  e.preventDefault();
+async function grab(){
   const url = input.value.trim();
-  if(!url) return;
+  if(!url){ input.focus(); return; }
+  if(submitBtn.disabled) return;
 
-  btn.disabled = true;
-  btn.textContent = 'Grabbing…';
-  statusEl.textContent = 'Resolving link…';
-  statusEl.classList.remove('error');
+  submitBtn.disabled = true;
+  submitBtn.innerHTML = '<span class="spinner"></span>Reading';
+  clearError();
+  stopWatching();
   card.classList.remove('show');
+  skeleton.classList.add('show');
+  document.body.classList.add('working', 'has-result');
 
   try {
     const res = await fetch('/api/resolve', {
@@ -340,53 +773,49 @@ form.addEventListener('submit', async (e) => {
     });
     let data;
     try { data = await res.json(); } catch (_) { throw new Error(GENERIC_ERROR); }
-
-    if(!res.ok){
-      throw new Error(data.error || 'Something went wrong.');
-    }
-
-    titleEl.textContent = data.title;
-    thumb.src = data.thumbnail || '';
-    thumb.style.display = data.thumbnail ? 'block' : 'none';
-
-    metaEl.innerHTML = '';
-    const pills = [
-      data.platform,
-      data.width && data.height ? `${data.width}×${data.height}` : null,
-      fmtDuration(data.duration),
-      data.uploader ? '@' + String(data.uploader).replace(/^@/, '') : null
-    ].filter(Boolean);
-    pills.forEach((p, i) => {
-      const span = document.createElement('span');
-      span.className = 'pill' + (i === 0 ? ' accent' : '');
-      span.textContent = p;
-      metaEl.appendChild(span);
-    });
-
-    currentUrl = url;
-    qualitiesEl.innerHTML = '';
-    hintEl.textContent = '';
-    const qs = data.qualities && data.qualities.length ? data.qualities : [null];
-    qs.forEach((h, i) => {
-      const a = document.createElement('a');
-      a.href = '#';
-      a.className = 'dl-btn' + (i === 0 ? '' : ' secondary');
-      a.dataset.label = h ? (qs.length > 1 ? qLabel(h) : `Download ${h >= 720 ? 'HD ' : ''}(${qLabel(h)})`) : 'Download';
-      a.textContent = a.dataset.label;
-      a.addEventListener('click', (ev) => { ev.preventDefault(); startDownload(a, data.platform === 'youtube' ? h : null); });
-      qualitiesEl.appendChild(a);
-    });
-
-    card.classList.add('show');
-    statusEl.textContent = 'Ready.';
+    if(!res.ok) throw new Error(data.error || GENERIC_ERROR);
+    showResult(data, url);
   } catch (err) {
     // Network failures surface as TypeError ("Failed to fetch") - not user-friendly.
     showError(err instanceof TypeError ? "Couldn't connect. Check your internet connection and try again." : err.message);
+    document.body.classList.remove('has-result');
   } finally {
-    btn.disabled = false;
-    btn.textContent = 'Grab it';
+    skeleton.classList.remove('show');
+    document.body.classList.remove('working');
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Grab it';
   }
+}
+
+form.addEventListener('submit', e => { e.preventDefault(); grab(); });
+downloadBtn.addEventListener('click', startDownload);
+input.addEventListener('input', showDetected);
+
+// A pasted link from a supported platform starts right away.
+input.addEventListener('paste', () => setTimeout(() => {
+  showDetected();
+  if(detectPlatform(input.value)) grab();
+}));
+pasteBtn.addEventListener('click', async () => {
+  try {
+    input.value = (await navigator.clipboard.readText()).trim();
+  } catch (_) {
+    input.focus();
+    return;
+  }
+  showDetected();
+  input.focus();
+  if(detectPlatform(input.value)) grab();
 });
+$('another-btn').addEventListener('click', () => {
+  input.value = '';
+  card.classList.remove('show');
+  document.body.classList.remove('has-result');
+  clearError();
+  showDetected();
+  input.focus();
+});
+showDetected();
 </script>
 </body>
 </html>
